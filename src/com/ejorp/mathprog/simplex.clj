@@ -1,4 +1,4 @@
-(ns com.ejorp.mathprog.core
+(ns com.ejorp.mathprog.simplex
   (:require (com.ejorp.mathprog [util :as util]
                                 [tableau :as tableau])))
 
