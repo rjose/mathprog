@@ -1,4 +1,4 @@
-(ns com.ejorp.mathprog.tableau)
+(ns ejorp.mathprog.tableau)
 
 (defn divide-row
   "Divides a row by a number `divisor`"

@@ -1,4 +1,4 @@
-(ns com.ejorp.mathprog.util)
+(ns ejorp.mathprog.util)
 
 (defn idx-min
   "Returns the index of the minimum element of `v`"
