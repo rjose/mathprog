@@ -1,32 +1,6 @@
-(ns com.ejorp.mathprog.core)
+(ns com.ejorp.mathprog.core
+  (:require (com.ejorp.mathprog [util :as util] )))
 
-;; Support
-(defn idx-min
-  "Returns the index of the minimum element of `v`"
-  [v]
-  (first (apply min-key second (map-indexed vector v))))
-
-(defn idx-max
-  "Returns the index of the maximum element of `v`"
-  [v]
-  (first (apply max-key second (map-indexed vector v))))
-
-(defn exclude-nth
-  "Returns a vector of items with the nth one excluded"
-  [v nth]
-  (map second (remove #(= nth (first %)) (map-indexed vector v))))
-
-(defn exclude-idxs
-  "Returns a vector of items with the specified indexes excluded"
-  [v idxs]
-  (let [idxs-set (apply hash-set idxs)]
-    (map second (remove #(idxs-set (first %)) (map-indexed vector v)))))
-
-(defn insert-at
-  "Inserts an element `e` at `idx` within a vector `v`"
-  [s idx e]
-  (let [v (vec s)]
-    (concat (subvec v 0 idx) [e] (subvec v idx))))
 
 ;; Tableau
 (defn divide-row
@@ -92,13 +66,13 @@
 is the index of the decision variable that we'd like to enter the basis."
   [rows var-idx]
   (let [ratios (map #(ratio % var-idx) rows)]
-    (idx-min ratios)))
+    (util/idx-min ratios)))
 
 (defn next-basic-var-idx
   "Returns the index of the next basic variable to enter the basis."
   [objective]
   ;; TODO: Figure out who should handle the case where there is no next basic variable
-  (idx-max (:coeffs objective)))
+  (util/idx-max (:coeffs objective)))
 
 ;; TODO: Handle unbounded case
 (defn should-pivot
@@ -106,7 +80,7 @@ is the index of the decision variable that we'd like to enter the basis."
   [{objective :objective, constraints :constraints}]
   (let [b-idxs (basic-idxs constraints) 
         obj-coeffs (:coeffs objective)
-        non-b-obj-coeffs (exclude-idxs obj-coeffs b-idxs)]
+        non-b-obj-coeffs (util/exclude-idxs obj-coeffs b-idxs)]
     (cond
       (every? #(<= % 0) non-b-obj-coeffs) false
       :else true)))
@@ -122,8 +96,8 @@ is the index of the decision variable that we'd like to enter the basis."
           constraint-idx (pivot-row-idx constraints next-basic-idx)
           constraint (set-basic-var (nth constraints constraint-idx) next-basic-idx)
           new-objective (eliminate-basic-var objective constraint)
-          new-constraints (insert-at
-                           (map #(eliminate-basic-var % constraint) (exclude-nth constraints constraint-idx))
+          new-constraints (util/insert-at
+                           (map #(eliminate-basic-var % constraint) (util/exclude-nth constraints constraint-idx))
                            constraint-idx constraint)
           new-should-stop (not (should-pivot {:objective new-objective, :constraints new-constraints}))
           ]
