@@ -1,56 +1,7 @@
 (ns com.ejorp.mathprog.core
-  (:require (com.ejorp.mathprog [util :as util] )))
+  (:require (com.ejorp.mathprog [util :as util]
+                                [tableau :as tableau])))
 
-
-;; Tableau
-(defn divide-row
-  "Divides a row by a number `divisor`"
-  [row divisor]
-  (let [val (/ (:val row) divisor)
-        coeffs (map #(/ % divisor) (:coeffs row))]
-    (merge row {:val val, :coeffs coeffs})))
-
-(defn multiply-row
-  "Multiplies a row by a number `factor`"
-  [row factor]
-  (let [val (* (:val row) factor)
-        coeffs (map #(* % factor) (:coeffs row))]
-    (merge row {:val val, :coeffs coeffs})))
-
-(defn subtract-row
-  "Subtracts one row from another"
-  [r1 r2]
-  (let [val (- (:val r1) (:val r2))
-        coeffs (map - (:coeffs r1) (:coeffs r2))]
-    (merge r1 {:val val, :coeffs coeffs})))
-
-(defn set-basic-var
-  "Sets a new basic var for a constraint. This ensures the basic variable's coefficient is 1."
-  [constraint var-idx]
-  (let [coeff (nth (:coeffs constraint) var-idx)
-        new-constraint (divide-row constraint coeff)]
-    (merge new-constraint {:basic-idx var-idx})))
-
-(defn eliminate-basic-var
-  "This removes a basic var from `row` using the associated `basis-constraint`"
-  [row basis-constraint]
-  (->> (nth (:coeffs row) (:basic-idx basis-constraint))
-      (multiply-row basis-constraint)
-      (subtract-row row)))
-
-(defn basic-idxs
-  "Returns the indexes for the basic variables in a constraint set"
-  [constraints]
-  (map #(:basic-idx %) constraints))
-
-(defn non-basic-idxs
-  "Returns the indexes for non-basic variables in a constraint set"
-  [constraints]
-  (let [b-idxs (apply hash-set (basic-idxs constraints)) 
-        all-idxs (range (count (:coeffs (first constraints))))]
-    (remove b-idxs all-idxs)))
-
-;; Simplex
 
 (defn ratio
   "Returns the ratio used to determine which constraint row to pivot from"
@@ -78,7 +29,7 @@ is the index of the decision variable that we'd like to enter the basis."
 (defn should-pivot
   "Returns false if the pivot result is optimal, infeasible, or unbounded"
   [{objective :objective, constraints :constraints}]
-  (let [b-idxs (basic-idxs constraints) 
+  (let [b-idxs (tableau/basic-idxs constraints) 
         obj-coeffs (:coeffs objective)
         non-b-obj-coeffs (util/exclude-idxs obj-coeffs b-idxs)]
     (cond
@@ -94,10 +45,10 @@ is the index of the decision variable that we'd like to enter the basis."
     tableau
     (let [next-basic-idx (next-basic-var-idx objective)
           constraint-idx (pivot-row-idx constraints next-basic-idx)
-          constraint (set-basic-var (nth constraints constraint-idx) next-basic-idx)
-          new-objective (eliminate-basic-var objective constraint)
+          constraint (tableau/set-basic-var (nth constraints constraint-idx) next-basic-idx)
+          new-objective (tableau/eliminate-basic-var objective constraint)
           new-constraints (util/insert-at
-                           (map #(eliminate-basic-var % constraint) (util/exclude-nth constraints constraint-idx))
+                           (map #(tableau/eliminate-basic-var % constraint) (util/exclude-nth constraints constraint-idx))
                            constraint-idx constraint)
           new-should-stop (not (should-pivot {:objective new-objective, :constraints new-constraints}))
           ]
