@@ -1,5 +1,5 @@
-(ns mathprog.test.core
-  (:use [mathprog.core])
+(ns com.ejorp.mathprog.test.core
+  (:use [com.ejorp.mathprog.core])
   (:use [clojure.test]))
 
 (deftest replace-me ;; FIXME: write
