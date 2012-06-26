@@ -64,22 +64,32 @@ current `objective`."
 (defn ratio
   "Returns the ratio of the `:val` of a constraint to the coefficient of the
 specified decision variable. This is used to determine how quickly a constraint
-will become binding as the decision variable is changed."
+will become binding as the decision variable is changed.
+"
   [row var-idx]
   (let [coeff (-> (:coeffs row) (nth var-idx))]
     (if (or (nil? coeff) (= 0 coeff))
-      (throw (RuntimeException. "Can't call ratio for variable without a coefficient"))
+      Double/NaN
       (/ (:val row) coeff))))
 
 
-; TODO: Ensure we handle the case where the coefficient is negative
+(defn peg-values-if-necessary
+  "This replaces a value in a vector with Dobule/MAX_VALUE if the
+value is NaN or non-positive."
+  [v]
+  (map #(cond
+          (Double/isNaN %) Double/MAX_VALUE
+          (<= % 0.0) Double/MAX_VALUE
+          :else %) v))
+
 (defn pivot-row-idx
   "Returns the index of the constraint that will be used for the next simplex
 pivot for the decision variable with index `var-idx`. In effect, this returns
 the basic variable that will leave when the new basic variable comes in."
   [rows var-idx]
-  (let [ratios (map #(ratio % var-idx) rows)]
-    (util/idx-min ratios)))
+  (let [ratios (map #(ratio % var-idx) rows)
+        pegged-ratios (peg-values-if-necessary ratios)]
+    (util/idx-min pegged-ratios)))
 
 
 ;; ## Executing the Simplex Algorithm
