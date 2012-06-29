@@ -89,7 +89,9 @@ the basic variable that will leave when the new basic variable comes in."
   [rows var-idx]
   (let [ratios (map #(ratio % var-idx) rows)
         pegged-ratios (peg-values-if-necessary ratios)]
-    (util/idx-min pegged-ratios)))
+    (if (every? #(= % Double/MAX_VALUE) pegged-ratios)
+      nil
+      (util/idx-min pegged-ratios))))
 
 
 ;; ## Executing the Simplex Algorithm

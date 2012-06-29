@@ -13,6 +13,7 @@
 ;; ## Tests
 (fact (simplex/pivot-row-idx [row1 row2] 1) => 0 )
 (fact (simplex/pivot-row-idx [row1 row2 row3] 1) => 0 )
+(fact (simplex/pivot-row-idx [row3] 1) => nil)
 
 ;; TODO: Figure out how to indicate an unbounded result
 ;; TODO: Figure out if an LP is in canonical form
