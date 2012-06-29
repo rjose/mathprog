@@ -3,7 +3,7 @@
 
 (ns ejorp.mathprog.simplex
   (:require (ejorp.mathprog [util :as util]
-                                [tableau :as tableau])))
+                            [tableau :as tableau])))
 
 ;; ## Rows, Constraints, and Objectives, and Tableaus
 ;;
@@ -58,7 +58,7 @@ current `objective`."
         var-idx (util/idx-max coeffs)
         coeff (nth coeffs var-idx)]
     (if (<= coeff 0.0)
-      (throw (RuntimeException. "No next basic variable because all objective coeffs are negative"))
+      nil
       var-idx)))
 
 (defn ratio
