@@ -85,7 +85,9 @@ value is NaN or non-positive."
 (defn pivot-row-idx
   "Returns the index of the constraint that will be used for the next simplex
 pivot for the decision variable with index `var-idx`. In effect, this returns
-the basic variable that will leave when the new basic variable comes in."
+the basic variable that will leave when the new basic variable comes in.
+
+If the solution is unbounded, `nil` is returned."
   [rows var-idx]
   (let [ratios (map #(ratio % var-idx) rows)
         pegged-ratios (peg-values-if-necessary ratios)]
@@ -108,24 +110,36 @@ the basic variable that will leave when the new basic variable comes in."
 
 ;; ### Simplex Functions
 
-; TODO: Handle unbounded case
-(defn should-pivot
-  "Returns false if the pivot result is optimal, infeasible, or unbounded"
+(defn optimal?
+  "Returns true if the tableau is optimal"
   [{objective :objective, constraints :constraints}]
   (let [b-idxs (tableau/basic-idxs constraints) 
         obj-coeffs (:coeffs objective)
         non-b-obj-coeffs (util/exclude-idxs obj-coeffs b-idxs)]
     (cond
-      (every? #(<= % 0) non-b-obj-coeffs) false
-      :else true)))
+      (every? #(<= % 0) non-b-obj-coeffs) true
+      :else false)))
 
+(defn tableau-status
+  [is-optimal pivot-row-idx]
+  (cond
+    is-optimal :optimal
+    (nil? pivot-row-idx) :unbounded
+    :else nil))
+
+(defn should-stop
+  "`true` if the tableau is `:optimal` or `:unbounded`; `false` otherwise."
+  [status]
+  (cond
+    (= status :optimal) true
+    (= status :unbounded) true
+    :else false))
 
 (defn pivot
   "Takes a tableau in canonical form and returns the next tableau in the simplex
-sequence. If the input tableau has `:should-stop` set to true, that tableau is
-returned as the solution."
-  [{objective :objective, constraints :constraints, should-stop :should-stop :as tableau}]
-  (if should-stop
+sequence. If the tableau no longer requires a pivot, the input tableau is returned."
+  [{objective :objective, constraints :constraints, status :status :as tableau}]
+  (if (should-stop status) 
     tableau
     (let [next-basic-idx (next-basic-var-idx objective)
           constraint-idx (pivot-row-idx constraints next-basic-idx)
@@ -135,9 +149,9 @@ returned as the solution."
                            (map #(tableau/eliminate-basic-var % constraint)
                                 (util/exclude-nth constraints constraint-idx))
                            constraint-idx constraint)
-          new-should-stop (not (should-pivot {:objective new-objective, :constraints new-constraints}))
-          ]
-      {:objective new-objective, :constraints new-constraints, :should-stop new-should-stop})))
+          is-optimal (optimal? {:objective new-objective, :constraints new-constraints})]
+      {:objective new-objective, :constraints new-constraints,
+       :status (tableau-status is-optimal constraint-idx)})))
 
 
 (defn tableau-seq
@@ -148,8 +162,7 @@ returned as the solution."
 (defn solve
   "Takes an LP in the form of a tableau and returns the solution in the form of a tableau."
   [initial-tableau]
-  (first (drop-while #(not (:should-stop %)) (tableau-seq initial-tableau))))
-
+  (first (drop-while #(nil? (:status %)) (tableau-seq initial-tableau))))
 
 
 ;; Fixtures
