@@ -2,19 +2,8 @@
 ;; solutions to linear programs.
 
 (ns ejorp.mathprog.sensitivity
-  (:require (ejorp.mathprog [tableau :as tableau])))
-
-;; ## Tableau Functions
-;; We should move these functions to tableau.clj.
-
-(defn add-constraint-map
-  "Adds a map of basic variable idx to constraint"
-  [tableau]
-  (if (:constraint-map tableau)
-    tableau
-    (let [constraints (:constraints tableau)
-        constraint-map (zipmap (map :basic-idx constraints) constraints)]
-    (merge tableau {:constraint-map constraint-map}))))
+  (:require (ejorp.mathprog [tableau :as tableau]
+                            [util :as util])))
 
 ;; ## Shadow prices and reduced cost
 ;;
@@ -101,33 +90,12 @@ for which the optimal solution remains unchanged."
     {:lt max-limit}))
 
 
-; TODO: Move these to util.clj
-(defn max-gt
-  [limits]
-  (reduce (fn [acc e]
-            (if (and (= :gt (first e))
-                     (or (nil? acc) (> (last e) acc)))
-              (last e)
-              acc))
-          nil limits))
-
-(defn min-lt
-  [limits]
-  (reduce (fn [acc e]
-            (if (and (= :lt (first e))
-                     (or (nil? acc) (< (last e) acc)))
-              (last e)
-              acc))
-          nil limits))
-
-
-
 (defn- basic-coeff-limit-for-non-basic-var
   "Returns the limit on the original objective coefficient for
   the basic variable `var-idx` such that `nonbasic-idx` enters the
   basis from the final tableau."
   [start-tableau end-tableau var-idx nonbasic-idx]
-  (let [end-tableau (add-constraint-map end-tableau)
+  (let [end-tableau (tableau/add-constraint-map end-tableau)
         initial-coeff (-> start-tableau :objective :coeffs (nth var-idx))
         non-basic-obj-coeff (-> end-tableau :objective :coeffs (nth nonbasic-idx))
         non-basic-constraint-coeff (-> end-tableau :constraint-map (get var-idx) :coeffs (nth nonbasic-idx))
@@ -144,14 +112,14 @@ for which the optimal solution remains unchanged."
 can take before it leaves the basis."
   [start-tableau end-tableau var-idx]
   (let [initial-coeff (-> start-tableau :objective :coeffs (nth var-idx))
-        constraint-map (-> end-tableau add-constraint-map :constraint-map)
+        constraint-map (-> end-tableau tableau/add-constraint-map :constraint-map)
         constraint-coeffs (:coeffs (constraint-map var-idx))
         objective-coeffs (:coeffs (:objective end-tableau))
         
         non-basic-idxs (tableau/non-basic-idxs (:constraints end-tableau))
         limits (for [i non-basic-idxs]
                  (basic-coeff-limit-for-non-basic-var start-tableau end-tableau var-idx i))]
-    {:gt (max-gt limits), :lt (min-lt limits)}))
+    {:gt (util/max-gt limits), :lt (util/min-lt limits)}))
 
 
 

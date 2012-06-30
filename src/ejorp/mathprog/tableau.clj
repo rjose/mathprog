@@ -47,3 +47,12 @@
         all-idxs (range (count (:coeffs (first constraints))))]
     (remove b-idxs all-idxs)))
 
+(defn add-constraint-map
+  "Adds a map of basic variable idx to constraint"
+  [tableau]
+  (if (:constraint-map tableau)
+    tableau
+    (let [constraints (:constraints tableau)
+        constraint-map (zipmap (map :basic-idx constraints) constraints)]
+    (merge tableau {:constraint-map constraint-map}))))
+
