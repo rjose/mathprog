@@ -19,7 +19,7 @@
 ;; **decrease** if you required a decision variable to be at a certain
 ;; non-zero level.
 
-;; ### Price Functions
+;; ### Implementation
 
 (defn- get-prices
   "Returns the shadow prices for the specified variables."
@@ -42,7 +42,7 @@
     (get-prices end-tableau decision-vars)))
 
 
-;; ## Objective Sensitivity
+;; ## Sensitivity of Objective Coeffs
 ;; We can use information from the initial and final tableaus to
 ;; determine how sensitive the optimal solution is with respect to
 ;; changes in the objective function.
@@ -54,16 +54,14 @@
 ;; For a coefficient `c`, we use `[:lt 10]` to mean
 ;; `c <= 10`. Likewise `[:gt 4]` means `c >= 4`.
 ;;
-;; ### Nonbasic variables
-;; For a variable that is non-basic in the final tableau, the only
-;; thing that determines whether it should enter the basis is if, in the
-;; "final" tableau, it has a positive coefficient. We can figure out
-;; when this happens by looking at the difference between the initial
+;; For a nonbasic variable in the final tableau, the only thing that
+;; determines whether it should enter the basis is if, in the "final"
+;; tableau, it has a positive coefficient. We can figure out when this
+;; happens by looking at the difference between the initial
 ;; coefficient and the final one. That's what `non-basic-coeff-limits`
-;; does. 
+;; does.
 ;;
-;; ### Basic variables
-;; Given a basic variable in the final tableau, we can figure out how
+;; For a basic variable in the final tableau, we can figure out how
 ;; varying its initial objective coefficient impacts when it leaves
 ;; the basis and a new nonbasic variable enters.  We do this by
 ;; looking at the constraint associated with the basic variable and
@@ -78,7 +76,7 @@
 ;; `basic-coeff-limits` does.
 
 
-;; ### Implementation
+;; ### Implementation for nonbasic decision vars
 
 (defn- non-basic-coeff-limits
   "Returns the max limit of a non-basic coeff 
@@ -89,6 +87,8 @@ for which the optimal solution remains unchanged."
         max-limit (- (nth start-coeffs var-idx) (nth end-coeffs var-idx))]
     {:lt max-limit}))
 
+
+;; ### Implementation for basic decision vars
 
 (defn- basic-coeff-limit-for-non-basic-var
   "Returns the limit on the original objective coefficient for
@@ -122,8 +122,9 @@ can take before it leaves the basis."
     {:gt (util/max-gt limits), :lt (util/min-lt limits)}))
 
 
+;; ### Bringing it all together
 
-(defn obj-coeff-sensitivity
+(defn obj-coeff-limits
   "Returns the limits on the initial objective coefficients such that
 the optimal solution in `end-tableau` is unchanged."
   [start-tableau end-tableau]
@@ -134,6 +135,68 @@ the optimal solution in `end-tableau` is unchanged."
       (if (contains? basic-idxs i)
         (basic-coeff-limits start-tableau end-tableau i)
         (non-basic-coeff-limits start-tableau end-tableau i)))))
+
+
+;; ## Sensitivity for RHS of Constraints
+;; There are two cases when dealing with RHS. The first is where the
+;; constraint is not binding, in other words, when the slack variable
+;; for this constraint is in the basis. To figure out the sensitivity
+;; limit here, we simply subtract the initial RHS from the value of
+;; the slack variable. In effect, this is the slack in our slack.
+;;
+;; The second case is where the constraint is binding. This happens
+;; when there is no slack in the constraint, in some sense, when all
+;; of the resources associated with this constraint have been
+;; exhausted. To figure out the sensitivity range here, we can think
+;; of adding a small amount to the RHS of the constraint in question
+;; and then finding the point at which any of the final basic
+;; variables becomes negative, signaling the exit of that variable
+;; from the basis. In effect, we are adding more of this resource up
+;; to the point where it cannot all be used.
+
+;; ### Implementation for basic slack variables
+
+(defn- basic-rhs-limits
+  "Returns the RHS limits when the slack variable is in the basis."
+  [start-tableau end-tableau var-idx]
+  (let [start-tableau (tableau/add-constraint-map start-tableau)
+        end-tableau (tableau/add-constraint-map end-tableau)
+        min-limit (- (-> start-tableau :constraint-map (get var-idx) :val)
+                     (-> end-tableau :constraint-map (get var-idx) :val))]
+    {:gt min-limit}))
+
+
+;; ### Implementation for nonbasic slack variables
+
+(defn- rhs-limit-for-slack-in-constraint
+  "Returns the RHS limit for the specified slack with respect to the
+specified constraint."
+  [constraint slack-var-idx]
+  (let [val (:val constraint)
+        coeff (-> constraint :coeffs (nth slack-var-idx))
+        limit (/ (- val) coeff)]
+    (if (> coeff 0)
+      [:gt limit]
+      [:lt limit])))
+
+(defn- non-basic-rhs-limits
+  "Returns the RHS limits when the slack variable is not in the basis"
+  [start-tableau end-tableau var-idx]
+  (let [constraints (:constraints end-tableau)
+        limits (map #(rhs-limit-for-slack-in-constraint % var-idx) constraints)]
+    {:gt (util/max-gt limits), :lt (util/min-lt limits)}))
+
+
+;; ### Bringing it all together
+
+(defn rhs-limits
+  "Gives the sensitivity ranges for the RHS of each constraint."
+  [start-tableau end-tableau]
+  (let [slack-vars (tableau/basic-idxs (:constraints start-tableau))
+        basic-idxs (apply hash-set (tableau/basic-idxs (:constraints end-tableau)))]
+    (for [i slack-vars] (if (contains? basic-idxs i)
+                          (basic-rhs-limits start-tableau end-tableau i)
+                          (non-basic-rhs-limits start-tableau end-tableau i)))))
 
 
 ;; ## Fixtures

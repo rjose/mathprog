@@ -32,7 +32,7 @@
     (nth reduced-costs 2) => (roughly 0.571)))
 
 (facts "about objective coefficient sensitivity"
-  (let [obj-sensitivity (sensitivity/obj-coeff-sensitivity start-tableau1 end-tableau1)]
+  (let [obj-sensitivity (sensitivity/obj-coeff-limits start-tableau1 end-tableau1)]
     (-> obj-sensitivity (nth 0) :gt) => (roughly 4.64)
     (-> obj-sensitivity (nth 0) :lt) => (roughly 5.4)
     

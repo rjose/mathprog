@@ -165,7 +165,7 @@ sequence. If the tableau no longer requires a pivot, the input tableau is return
   (first (drop-while #(nil? (:status %)) (tableau-seq initial-tableau))))
 
 
-;; Fixtures
+;; ## Fixtures
 (def row1 {:val 24, :basic-idx 3, :coeffs [0.5 2 1 1 0]})
 (def row2 {:val 60, :basic-idx 4, :coeffs [1 2 4 0 0]})
 (def objective {:val 0, :coeffs [6 14 13 0 0]})
