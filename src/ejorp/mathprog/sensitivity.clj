@@ -44,13 +44,13 @@
   "Returns a vector of shadow prices for each resource constraint."
   [start-tableau end-tableau]
   (let [slack-vars (tableau/basic-idxs (:constraints start-tableau))]
-    (get-prices start-tableau end-tableau slack-vars)))
+    (get-prices end-tableau slack-vars)))
 
 (defn reduced-costs
   "Returns the reduced cost of for each decision variable."
   [start-tableau end-tableau]
   (let [decision-vars (tableau/non-basic-idxs (:constraints start-tableau))]
-    (get-prices start-tableau end-tableau decision-vars)))
+    (get-prices end-tableau decision-vars)))
 
 
 ;; ## Objective Sensitivity
