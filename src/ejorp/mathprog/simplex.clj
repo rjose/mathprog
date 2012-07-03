@@ -1,6 +1,8 @@
 ;; This implements the simplex algorithm for solving linear programs as
 ;; laid out by Bradley, Hax, and Magnanti.
 
+; TODO: Rewrite functions to take a tableau instead of specific constraints or objectives
+
 (ns ejorp.mathprog.simplex
   (:require (ejorp.mathprog [util :as util]
                             [tableau :as tableau])))
@@ -165,9 +167,38 @@ sequence. If the tableau no longer requires a pivot, the input tableau is return
   (first (drop-while #(nil? (:status %)) (tableau-seq initial-tableau))))
 
 
+; Dual simplex functions
+(defn dual-pivot-row-idx
+  "Returns index of constraint to be used as the pivot in the
+  dual-simplex method"
+  [tableau]
+  (util/idx-min (:constraints tableau) :val))
+
+; TODO: Test if there are no negative coeffs in the constraint
+(defn dual-next-basic-idx
+  "Returns the index of the nonbasic variable that should enter the
+  basis next given a pivot row idx"
+  [tableau row-idx]
+  (let [constraint-coeffs (-> tableau :constraints (nth row-idx) :coeffs)
+        neg-coeff? (map neg? constraint-coeffs)
+        neg-non-basic-idxs (filter #(nth neg-coeff? %) (tableau/non-basic-idxs (:constraints tableau)))
+        obj-coeffs (-> tableau :objective :coeffs)]
+    (nth neg-non-basic-idxs
+         (util/idx-min (for [i neg-non-basic-idxs] (/ (nth obj-coeffs i) (nth constraint-coeffs i)))))))
+
+; TODO: Rewrite pivot function so it takes a nonbasic index and a basic idx
+; TODO: Rewrite other functions to return indexes that can be used in the pivot
+
+
 ;; ## Fixtures
 (def row1 {:val 24, :basic-idx 3, :coeffs [0.5 2 1 1 0]})
 (def row2 {:val 60, :basic-idx 4, :coeffs [1 2 4 0 0]})
 (def objective {:val 0, :coeffs [6 14 13 0 0]})
 (def constraints [row1 row2])
 (def problem {:objective objective, :constraints constraints})
+
+(def dual-tableau1
+  {
+   :objective {:val 0, :coeffs [-3 -1 0 0]},
+   :constraints [{:val -1, :basic-idx 2, :coeffs [-1 -1 1 0]}
+                 {:val -2, :basic-idx 3, :coeffs [-2 -3 0 1]}]})

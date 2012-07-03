@@ -2,13 +2,15 @@
 
 (defn idx-min
   "Returns the index of the minimum element of `v`"
-  [v]
-  (first (apply min-key second (map-indexed vector v))))
+  ([v] (idx-min v identity))
+  ([v f] (first (apply min-key #(f (second %)) (map-indexed vector v))))
+  )
 
 (defn idx-max
   "Returns the index of the maximum element of `v`"
-  [v]
-  (first (apply max-key second (map-indexed vector v))))
+  ([v] (idx-max v identity))
+  ([v f] (first (apply max-key #(f (second %)) (map-indexed vector v))))
+  )
 
 (defn exclude-nth
   "Returns a vector of items with the nth one excluded"
