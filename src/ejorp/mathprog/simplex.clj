@@ -93,8 +93,9 @@ If the solution is unbounded, `nil` is returned."
   [rows var-idx]
   (let [ratios (map #(ratio % var-idx) rows)
         pegged-ratios (peg-values-if-necessary ratios)]
+    ; TODO: Get rid of Double/MAX_VALUE
     (if (every? #(= % Double/MAX_VALUE) pegged-ratios)
-      (throw (RuntimeException. "Tableau not in canonical form?"))
+      nil
       (util/idx-min pegged-ratios))))
 
 
@@ -123,13 +124,24 @@ If the solution is unbounded, `nil` is returned."
            (every? #(>= (-> % :val) 0) constraints)) true
       :else false)))
 
+
+; NOTE: Doesn't check all cases, just the next step
+(defn unbounded?
+  [tableau]
+  (if-let [var-idx (next-basic-idx (:objective tableau))]
+    (and (pos? (-> tableau :objective :coeffs (nth var-idx)))
+             (every? #(<= (-> % :coeffs (nth var-idx))  0) (-> tableau :constraints)))
+    false))
+
+; NOTE: Assume tableau is in canonical form
 (defn tableau-status
-  [is-optimal pivot-row-idx]
+  [tableau]
   (cond
-    is-optimal :optimal
-    (nil? pivot-row-idx) :unbounded
+    (optimal? tableau) :optimal
+    (unbounded? tableau) :unbounded
     :else nil))
 
+; TODO: Rename this so it's more functionaly
 (defn should-stop
   "`true` if the tableau is `:optimal` or `:unbounded`; `false` otherwise."
   [status]
@@ -140,10 +152,9 @@ If the solution is unbounded, `nil` is returned."
 
 (defn pivot
   "Returns the updated tableau given a tableau and the index of the
-  pivot constraint the index of the variable entering the basis"
+  pivot constraint and the index of the variable entering the basis"
   [{objective :objective, constraints :constraints, status :status :as tableau}
-   constraint-idx
-   entering-idx]
+   constraint-idx entering-idx]
   (let [tableau (tableau/add-constraint-map tableau)
         constraint (tableau/set-basic-var (nth constraints constraint-idx) entering-idx)
         new-objective (tableau/eliminate-basic-var objective constraint)
@@ -151,9 +162,8 @@ If the solution is unbounded, `nil` is returned."
                          (map #(tableau/eliminate-basic-var % constraint)
                               (util/exclude-nth constraints constraint-idx))
                          constraint-idx constraint)
-        is-optimal (optimal? {:objective new-objective, :constraints new-constraints})]
-    {:objective new-objective, :constraints new-constraints,
-     :status (tableau-status is-optimal constraint-idx)}))
+        new-tableau {:objective new-objective, :constraints new-constraints}]
+    (merge new-tableau {:status (tableau-status new-tableau)})))
 
 
 (defn simplex-next

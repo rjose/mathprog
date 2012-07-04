@@ -28,6 +28,7 @@
         new-constraint (divide-row constraint coeff)]
     (merge new-constraint {:basic-idx var-idx})))
 
+; TODO: Need to throw an exception if there isn't a basic var associated with the constraint
 (defn eliminate-basic-var
   "This removes a basic var from `row` using the associated `basis-constraint`"
   [row basis-constraint]
