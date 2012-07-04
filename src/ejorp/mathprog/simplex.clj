@@ -42,7 +42,7 @@
 ;; One way to determine which variable should enter the basis next is to look at
 ;; the objective function and pick the variable with the greatest coefficient.
 ;; The rationale is that this variable will have the greatest impact on the
-;; objective.  This is how `next-basic-var-idx` works.
+;; objective.  This is how `next-basic-idx` works.
 ;;
 ;; To determine which basic variable should leave a set when pivoting a new
 ;; variable in, we look at the ratio of each constraints `:val` to the
@@ -52,7 +52,7 @@
 
 ;; ### Pivoting Support Functions
 
-(defn next-basic-var-idx
+(defn next-basic-idx
   "Returns the index of the next variable to enter the basis by looking at the
 current `objective`."
   [objective]
@@ -94,7 +94,7 @@ If the solution is unbounded, `nil` is returned."
   (let [ratios (map #(ratio % var-idx) rows)
         pegged-ratios (peg-values-if-necessary ratios)]
     (if (every? #(= % Double/MAX_VALUE) pegged-ratios)
-      nil
+      (throw (RuntimeException. "Tableau not in canonical form?"))
       (util/idx-min pegged-ratios))))
 
 
@@ -119,7 +119,8 @@ If the solution is unbounded, `nil` is returned."
         obj-coeffs (:coeffs objective)
         non-b-obj-coeffs (util/exclude-idxs obj-coeffs b-idxs)]
     (cond
-      (every? #(<= % 0) non-b-obj-coeffs) true
+      (and (every? #(<= % 0) non-b-obj-coeffs)
+           (every? #(>= (-> % :val) 0) constraints)) true
       :else false)))
 
 (defn tableau-status
@@ -138,34 +139,51 @@ If the solution is unbounded, `nil` is returned."
     :else false))
 
 (defn pivot
-  "Takes a tableau in canonical form and returns the next tableau in the simplex
-sequence. If the tableau no longer requires a pivot, the input tableau is returned."
+  "Returns the updated tableau given a tableau and the index of the
+  pivot constraint the index of the variable entering the basis"
+  [{objective :objective, constraints :constraints, status :status :as tableau}
+   constraint-idx
+   entering-idx]
+  (let [tableau (tableau/add-constraint-map tableau)
+        constraint (tableau/set-basic-var (nth constraints constraint-idx) entering-idx)
+        new-objective (tableau/eliminate-basic-var objective constraint)
+        new-constraints (util/insert-at
+                         (map #(tableau/eliminate-basic-var % constraint)
+                              (util/exclude-nth constraints constraint-idx))
+                         constraint-idx constraint)
+        is-optimal (optimal? {:objective new-objective, :constraints new-constraints})]
+    {:objective new-objective, :constraints new-constraints,
+     :status (tableau-status is-optimal constraint-idx)}))
+
+
+(defn simplex-next
+  "Returns the next tableau in the simplex algorithm sequence given a tableau"
   [{objective :objective, constraints :constraints, status :status :as tableau}]
-  (if (should-stop status) 
+  (if (should-stop status)
     tableau
-    (let [next-basic-idx (next-basic-var-idx objective)
-          constraint-idx (pivot-row-idx constraints next-basic-idx)
-          constraint (tableau/set-basic-var (nth constraints constraint-idx) next-basic-idx)
-          new-objective (tableau/eliminate-basic-var objective constraint)
-          new-constraints (util/insert-at
-                           (map #(tableau/eliminate-basic-var % constraint)
-                                (util/exclude-nth constraints constraint-idx))
-                           constraint-idx constraint)
-          is-optimal (optimal? {:objective new-objective, :constraints new-constraints})]
-      {:objective new-objective, :constraints new-constraints,
-       :status (tableau-status is-optimal constraint-idx)})))
+    (let [next-basic-idx (next-basic-idx objective)
+          constraint-idx (pivot-row-idx constraints next-basic-idx)]
+      (pivot tableau constraint-idx next-basic-idx))))
 
 
 (defn tableau-seq
   "Returns a lazy, infinite seq of tableaus for each iteration of the simplex method"
   [initial-tableau]
-  (iterate pivot initial-tableau))
+  (iterate simplex-next initial-tableau))
 
 (defn solve
   "Takes an LP in the form of a tableau and returns the solution in the form of a tableau."
   [initial-tableau]
   (first (drop-while #(nil? (:status %)) (tableau-seq initial-tableau))))
 
+(defn is-primal-canonical?
+  [tableau]
+  (every? #(and (>= (:val %) 0)
+                (-> % :basic-idx nil? not)) (-> tableau :constraints)))
+
+(defn is-dual-canonical?
+  [tableau]
+  (and (every? #(<= % 0) (-> tableau :objective :coeffs))))
 
 ; Dual simplex functions
 (defn dual-pivot-row-idx
@@ -186,9 +204,26 @@ sequence. If the tableau no longer requires a pivot, the input tableau is return
     (nth neg-non-basic-idxs
          (util/idx-min (for [i neg-non-basic-idxs] (/ (nth obj-coeffs i) (nth constraint-coeffs i)))))))
 
-; TODO: Rewrite pivot function so it takes a nonbasic index and a basic idx
-; TODO: Rewrite other functions to return indexes that can be used in the pivot
+(defn dual-simplex-next
+  [{objective :objective, constraints :constraints, status :status :as tableau}]
+  (if (should-stop status)
+    tableau
+    (let [constraint-idx (dual-pivot-row-idx tableau)
+          next-basic-idx (dual-next-basic-idx tableau constraint-idx)]
+      (pivot tableau constraint-idx next-basic-idx))))
 
+(defn dual-tableau-seq
+  "Returns a lazy, infinite seq of tableaus for each iteration of the simplex method"
+  [initial-tableau]
+  (iterate dual-simplex-next initial-tableau))
+
+(defn dual-solve
+  "Takes an LP in the form of a tableau and returns the solution in the form of a tableau."
+  [initial-tableau]
+  (first (drop-while #(nil? (:status %)) (dual-tableau-seq initial-tableau))))
+
+
+; TODO: Add checks for canonical before attempting to solve
 
 ;; ## Fixtures
 (def row1 {:val 24, :basic-idx 3, :coeffs [0.5 2 1 1 0]})
@@ -202,3 +237,5 @@ sequence. If the tableau no longer requires a pivot, the input tableau is return
    :objective {:val 0, :coeffs [-3 -1 0 0]},
    :constraints [{:val -1, :basic-idx 2, :coeffs [-1 -1 1 0]}
                  {:val -2, :basic-idx 3, :coeffs [-2 -3 0 1]}]})
+
+
