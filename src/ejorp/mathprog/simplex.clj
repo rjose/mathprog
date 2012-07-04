@@ -27,9 +27,9 @@
 ;;
 ;;       {:objective objective,
 ;;        :constraints [constraint1, ...],
-;;        :should-stop false}
+;;        :status :optimal}
 ;;
-;; The `should-stop` field indicates if the tableau has reached its final state.
+;; The `:status` field indicates if the tableau has reached its final state.
 
 ;; ## Pivoting
 ;;
@@ -59,44 +59,25 @@ current `objective`."
   (let [coeffs (:coeffs objective)
         var-idx (util/idx-max coeffs)
         coeff (nth coeffs var-idx)]
-    (if (<= coeff 0.0)
-      nil
-      var-idx)))
+    (if (<= coeff 0.0) nil var-idx)))
 
 (defn ratio
   "Returns the ratio of the `:val` of a constraint to the coefficient of the
 specified decision variable. This is used to determine how quickly a constraint
-will become binding as the decision variable is changed.
-"
+will become binding as the decision variable is changed."
   [row var-idx]
   (let [coeff (-> (:coeffs row) (nth var-idx))]
-    (if (or (nil? coeff) (= 0 coeff))
-      Double/NaN
-      (/ (:val row) coeff))))
+    (if (or (nil? coeff) (= 0 coeff)) Double/NaN (/ (:val row) coeff))))
 
-
-(defn peg-values-if-necessary
-  "This replaces a value in a vector with Dobule/MAX_VALUE if the
-value is NaN or non-positive."
-  [v]
-  (map #(cond
-          (Double/isNaN %) Double/MAX_VALUE
-          (<= % 0.0) Double/MAX_VALUE
-          :else %) v))
 
 (defn pivot-row-idx
   "Returns the index of the constraint that will be used for the next simplex
 pivot for the decision variable with index `var-idx`. In effect, this returns
-the basic variable that will leave when the new basic variable comes in.
-
-If the solution is unbounded, `nil` is returned."
+the basic variable that will leave when the new basic variable comes in."
   [rows var-idx]
   (let [ratios (map #(ratio % var-idx) rows)
-        pegged-ratios (peg-values-if-necessary ratios)]
-    ; TODO: Get rid of Double/MAX_VALUE
-    (if (every? #(= % Double/MAX_VALUE) pegged-ratios)
-      nil
-      (util/idx-min pegged-ratios))))
+        pegged-ratios (map #(if (or (Double/isNaN %) (<= % 0)) Double/MAX_VALUE %) ratios)]
+    (if (every? #(= % Double/MAX_VALUE) pegged-ratios) nil (util/idx-min pegged-ratios))))
 
 
 ;; ## Executing the Simplex Algorithm
@@ -104,11 +85,10 @@ If the solution is unbounded, `nil` is returned."
 ;; The collection of tableau pivots from initial tableau to the solution tableau
 ;; can be viewed as a lazily computed seq. Each of these tableaus is computed by
 ;; applying the `pivot` function to the previous tableau. At each pivot we
-;; figure out if there another pivot is required. This is stored as
-;; `:should-stop` in each tableau.
+;; figure out the new state of the tableau.
 ;;
 ;; To solve an LP using the simplex algorithm, we simply drop all tableaus
-;; from this seq for which `:should-stop` is false and then take the next tableau
+;; from this seq for which `:status` is nil and then take the next tableau
 ;; as the solution. This is essentially what `solve` does.
 
 ;; ### Simplex Functions
@@ -119,10 +99,8 @@ If the solution is unbounded, `nil` is returned."
   (let [b-idxs (tableau/basic-idxs constraints) 
         obj-coeffs (:coeffs objective)
         non-b-obj-coeffs (util/exclude-idxs obj-coeffs b-idxs)]
-    (cond
-      (and (every? #(<= % 0) non-b-obj-coeffs)
-           (every? #(>= (-> % :val) 0) constraints)) true
-      :else false)))
+    (and (every? #(<= % 0) non-b-obj-coeffs)
+           (every? #(>= (-> % :val) 0) constraints))))
 
 
 ; NOTE: Doesn't check all cases, just the next step
@@ -141,8 +119,7 @@ If the solution is unbounded, `nil` is returned."
     (unbounded? tableau) :unbounded
     :else nil))
 
-; TODO: Rename this so it's more functionaly
-(defn should-stop
+(defn has-converged?
   "`true` if the tableau is `:optimal` or `:unbounded`; `false` otherwise."
   [status]
   (cond
@@ -169,7 +146,7 @@ If the solution is unbounded, `nil` is returned."
 (defn simplex-next
   "Returns the next tableau in the simplex algorithm sequence given a tableau"
   [{objective :objective, constraints :constraints, status :status :as tableau}]
-  (if (should-stop status)
+  (if (has-converged? status)
     tableau
     (let [next-basic-idx (next-basic-idx objective)
           constraint-idx (pivot-row-idx constraints next-basic-idx)]
@@ -216,7 +193,7 @@ If the solution is unbounded, `nil` is returned."
 
 (defn dual-simplex-next
   [{objective :objective, constraints :constraints, status :status :as tableau}]
-  (if (should-stop status)
+  (if (has-converged? status)
     tableau
     (let [constraint-idx (dual-pivot-row-idx tableau)
           next-basic-idx (dual-next-basic-idx tableau constraint-idx)]
