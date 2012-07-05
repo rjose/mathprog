@@ -1,28 +1,31 @@
+;; ## Simplex Algorithm
+;;
 ;; This implements the simplex algorithm for solving linear programs as
 ;; laid out by Bradley, Hax, and Magnanti.
-
-; TODO: Rewrite functions to take a tableau instead of specific constraints or objectives
 
 (ns ejorp.mathprog.simplex
   (:require (ejorp.mathprog [util :as util]
                             [tableau :as tableau])))
 
 ;; ## Rows, Constraints, and Objectives, and Tableaus
-;;
-;; When we talk about a "row", we mean a map that has the following form
+;; 
+;; When we talk about a "row", we mean something that has the following form
 ;;
 ;;       {:val 0, :coeffs [6 14 13 0 0]}
-;;
-;; The `:val` field is the RHS of the equation. The `:coeffs` field are the
+;; 
+;; The `:val` field is the RHS of the equation. The `:coeffs` field contains the
 ;; coefficients of the decision variables.
 ;;
 ;; Objectives have the same form as rows. When a tableau is optimal,
 ;; `:val` is the optimal value of the problem.
-;;
-;; Constraints are rows that also have a `basic-idx` field. This gives the
-;; index of the basic variable associated with that constraint.
-;;
-;; A tableau is a map that combines the objective and constraints for a problem. It has
+;; 
+;; Constraint rows also have a `basic-idx` field. This gives the
+;; index of the basic variable associated with that constraint. This
+;; means that the coefficient of the basic variable is 1 in the
+;; constraint and zero in all other constraints and zero in the
+;; objective. 
+;; 
+;; A tableau combines the objective and constraints for a problem. It has
 ;; the following form:
 ;;
 ;;       {:objective objective,
@@ -33,11 +36,8 @@
 
 ;; ## Pivoting
 ;;
-;; Pivoting happens when a new variable enter the basis, displacing one of the
-;; previous basic variables. When the tableau is in canonical form, each
-;; constraint is associated with a basic variable. This means that it appears in
-;; that constraint with a coefficient of 1 and does not appear in any other
-;; constraint (or the objective function).
+;; Pivoting happens when a new nonbasic variable enter the basis,
+;; displacing one of the previous basic variables. 
 ;;
 ;; One way to determine which variable should enter the basis next is to look at
 ;; the objective function and pick the variable with the greatest coefficient.
@@ -50,12 +50,14 @@
 ;; ratio is the one that will become binding first. The `pivot-row-idx` function
 ;; computes this for us.
 
-;; ### Pivoting Support Functions
+
+
+;; ### Pivoting Functions
 
 (defn next-basic-idx
   "Returns the index of the next variable to enter the basis by looking at the
 current `objective`."
-  [objective]
+  [{objective :objective :as tableau} ]
   (let [coeffs (:coeffs objective)
         var-idx (util/idx-max coeffs)
         coeff (nth coeffs var-idx)]
@@ -74,8 +76,8 @@ will become binding as the decision variable is changed."
   "Returns the index of the constraint that will be used for the next simplex
 pivot for the decision variable with index `var-idx`. In effect, this returns
 the basic variable that will leave when the new basic variable comes in."
-  [rows var-idx]
-  (let [ratios (map #(ratio % var-idx) rows)
+  [{constraints :constraints :as tableau}  var-idx]
+  (let [ratios (map #(ratio % var-idx) constraints)
         pegged-ratios (map #(if (or (Double/isNaN %) (<= % 0)) Double/MAX_VALUE %) ratios)]
     (if (every? #(= % Double/MAX_VALUE) pegged-ratios) nil (util/idx-min pegged-ratios))))
 
@@ -84,7 +86,7 @@ the basic variable that will leave when the new basic variable comes in."
 ;;
 ;; The collection of tableau pivots from initial tableau to the solution tableau
 ;; can be viewed as a lazily computed seq. Each of these tableaus is computed by
-;; applying the `pivot` function to the previous tableau. At each pivot we
+;; applying the `simplex-next` function to the previous tableau. At each pivot we
 ;; figure out the new state of the tableau.
 ;;
 ;; To solve an LP using the simplex algorithm, we simply drop all tableaus
@@ -103,16 +105,18 @@ the basic variable that will leave when the new basic variable comes in."
            (every? #(>= (-> % :val) 0) constraints))))
 
 
-; NOTE: Doesn't check all cases, just the next step
 (defn unbounded?
+  "true if the problem is unbounded with respect to the next
+basic variable; false otherwise"
   [tableau]
-  (if-let [var-idx (next-basic-idx (:objective tableau))]
+  (if-let [var-idx (next-basic-idx tableau)]
     (and (pos? (-> tableau :objective :coeffs (nth var-idx)))
              (every? #(<= (-> % :coeffs (nth var-idx))  0) (-> tableau :constraints)))
     false))
 
-; NOTE: Assume tableau is in canonical form
 (defn tableau-status
+  "Given a tableau in canonical form, returns its status; one of:
+`:optimal`, `:unbounded`, or `nil`."
   [tableau]
   (cond
     (optimal? tableau) :optimal
@@ -148,8 +152,8 @@ the basic variable that will leave when the new basic variable comes in."
   [{objective :objective, constraints :constraints, status :status :as tableau}]
   (if (has-converged? status)
     tableau
-    (let [next-basic-idx (next-basic-idx objective)
-          constraint-idx (pivot-row-idx constraints next-basic-idx)]
+    (let [next-basic-idx (next-basic-idx tableau)
+          constraint-idx (pivot-row-idx tableau next-basic-idx)]
       (pivot tableau constraint-idx next-basic-idx))))
 
 
@@ -164,50 +168,11 @@ the basic variable that will leave when the new basic variable comes in."
   (first (drop-while #(nil? (:status %)) (tableau-seq initial-tableau))))
 
 (defn is-primal-canonical?
+  "`true` if the tableau is in primal canonical form."
   [tableau]
   (every? #(and (>= (:val %) 0)
                 (-> % :basic-idx nil? not)) (-> tableau :constraints)))
 
-(defn is-dual-canonical?
-  [tableau]
-  (and (every? #(<= % 0) (-> tableau :objective :coeffs))))
-
-; Dual simplex functions
-(defn dual-pivot-row-idx
-  "Returns index of constraint to be used as the pivot in the
-  dual-simplex method"
-  [tableau]
-  (util/idx-min (:constraints tableau) :val))
-
-; TODO: Test if there are no negative coeffs in the constraint
-(defn dual-next-basic-idx
-  "Returns the index of the nonbasic variable that should enter the
-  basis next given a pivot row idx"
-  [tableau row-idx]
-  (let [constraint-coeffs (-> tableau :constraints (nth row-idx) :coeffs)
-        neg-coeff? (map neg? constraint-coeffs)
-        neg-non-basic-idxs (filter #(nth neg-coeff? %) (tableau/non-basic-idxs (:constraints tableau)))
-        obj-coeffs (-> tableau :objective :coeffs)]
-    (nth neg-non-basic-idxs
-         (util/idx-min (for [i neg-non-basic-idxs] (/ (nth obj-coeffs i) (nth constraint-coeffs i)))))))
-
-(defn dual-simplex-next
-  [{objective :objective, constraints :constraints, status :status :as tableau}]
-  (if (has-converged? status)
-    tableau
-    (let [constraint-idx (dual-pivot-row-idx tableau)
-          next-basic-idx (dual-next-basic-idx tableau constraint-idx)]
-      (pivot tableau constraint-idx next-basic-idx))))
-
-(defn dual-tableau-seq
-  "Returns a lazy, infinite seq of tableaus for each iteration of the simplex method"
-  [initial-tableau]
-  (iterate dual-simplex-next initial-tableau))
-
-(defn dual-solve
-  "Takes an LP in the form of a tableau and returns the solution in the form of a tableau."
-  [initial-tableau]
-  (first (drop-while #(nil? (:status %)) (dual-tableau-seq initial-tableau))))
 
 
 ; TODO: Add checks for canonical before attempting to solve
@@ -219,10 +184,5 @@ the basic variable that will leave when the new basic variable comes in."
 (def constraints [row1 row2])
 (def problem {:objective objective, :constraints constraints})
 
-(def dual-tableau1
-  {
-   :objective {:val 0, :coeffs [-3 -1 0 0]},
-   :constraints [{:val -1, :basic-idx 2, :coeffs [-1 -1 1 0]}
-                 {:val -2, :basic-idx 3, :coeffs [-2 -3 0 1]}]})
 
 
